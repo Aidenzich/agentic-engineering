@@ -39,5 +39,6 @@
 - **弱點本質：** 業界常試圖用 Agent Swarm（如 Coder Agent 搭配 Reviewer Agent）來彌補單一 LLM 的缺陷。 但由於底層模型共享相似的訓練資料分佈與 Attention 盲區，這些 Agent 之間並不會產生真正的「對抗性監督（Adversarial Supervision）」，反而容易形成確認偏誤的同溫層。
 - **具體表現：** 當 Reviewer Agent 檢查 Coder 產出的程式碼時，只要局部邏輯自洽、語法正確，Reviewer 的 Attention 就會被眼前的「完美局部解」吸走，進而掉入「局部一致性陷阱（Local Consistency Trap）」。堆疊再多的 Agent 也無法無中生有地喚醒它們對「全局跨檔需求」的記憶，只會產生「專案已完美執行」的集體幻覺。
 
-**總結我們的共識：**
+## Wrap UP
+
 正因為 LLM 在架構上有這些不可逆的缺陷，Agentic Engineering 的核心才不是「如何讓模型變得全知全能」，而是**「如何打造一個容錯、嚴格、充滿確定性邊界的執行環境，讓 LLM 的局部最佳解無所遁形」**。
