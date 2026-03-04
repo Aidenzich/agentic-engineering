@@ -72,7 +72,7 @@
 
 ## 2. 系統架構概覽
 
-### 2.1 Core Modules（7 個）
+### 2.1 Core Modules（6 個）
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -88,17 +88,17 @@
 │         │                   │                            │                    │
 │         │     ┌─────────────▼─────────────┐              │                    │
 │         │     │   ★ Service Catalog ★      │              │                    │
-│         ├────►│      (Module 6 — NEW)      │◄─────────────┘                    │
+│         ├────►│         (Module 5)         │◄─────────────┘                    │
 │         │     │  THE central hub entity    │                                  │
 │         │     │  Service · Environment ·   │                                  │
 │         │     │  Owner · Health · Cost     │                                  │
 │         │     └─────────────┬─────────────┘                                  │
 │         │                   │                                                │
-│  ┌──────▼───────────────┐   │   ┌────────────────────┐  ┌────────────────┐   │
-│  │ Plugin & Agent System │   │   │ Team Management    │  │ Metrics &      │   │
-│  │ (Module 4)            │◄──┘   │ RBAC & Policy      │  │ Analytics      │   │
-│  │                       │       │ (Module 5)         │  │ Engine (Mod 7) │   │
-│  │ ┌──────────────────┐  │       └────────────────────┘  └────────────────┘   │
+│  ┌──────▼───────────────┐   │   ┌────────────────────┐                       │
+│  │ Plugin & Agent System │   │   │ Team Management    │                       │
+│  │ (Module 4)            │◄──┘   │ RBAC & Policy      │                       │
+│  │                       │       │ (Module 6)         │                       │
+│  │ ┌──────────────────┐  │       └────────────────────┘                       │
 │  │ │ Agent Runtime     │  │                                                   │
 │  │ │ (Custom AI Apps)  │  │                                                   │
 │  │ └──────────────────┘  │                                                   │
@@ -262,19 +262,6 @@ Test Case 為 Ticket 關聯的子實體，與 Wiki（SBE Specs）和 PR（測試
 | S-043 | **Sprint Velocity Tracking**   | P1     | 歷史速率追蹤，但系統預設提示搭配 DORA / EBM 價值指標                                                                       |
 | S-044 | **Sprint Retrospective Board** | P1     | 內建回顧看板，支援 Start/Stop/Continue 框架、匿名投票、AI 自動生成洞察摘要                                                 |
 | S-045 | **Sprint Review Auto-Summary** | P2     | AI 自動生成 Sprint Review 報告，對應 Ticket → Wiki → PR → Deploy 的完整交付鏈                                              |
-
-#### 4.2.7 現代化指標體系
-
-| ID    | 功能                                | 優先級 | 說明                                                                                                                          |
-| ----- | ----------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| S-050 | **DORA Metrics Dashboard**          | P1     | 追蹤 Deployment Frequency、Lead Time for Changes（細分至 Task/PR/Deploy Cycle）、Change Failure Rate、Time to Restore Service |
-| S-051 | **DORA 5th Metric: Rework Rate**    | P1     | 追蹤為修復 User-facing Bug 而進行的非計畫性部署比例，及早捕捉 AI 引入的技術債                                                 |
-| S-052 | **SPACE Framework Indicators**      | P2     | Satisfaction & Well-being、Performance、Activity、Communication、Efficiency 五維度                                            |
-| S-053 | **EBM (Evidence-Based Management)** | P2     | Current Value、Unrealized Value、Time-to-Market、Ability to Innovate 四大 KVA                                                 |
-| S-054 | **Team Health Radar**               | P1     | 定期匿名問卷收集，AI 分析趨勢並預警認知過載或職業倦怠風險                                                                     |
-| S-055 | **Anti-Vanity Metrics Guard**       | P2     | 過度依賴 Story Points / Velocity / LoC 時主動提示搭配價值有效性指標                                                           |
-| S-056 | **Review Cycle Time Analytics**     | P1     | 追蹤 PR 從 Open 到 Merged 的時間分布，識別 Code Review 瓶頸（AI 產出速度 vs. 人類審查瓶頸）                                   |
-| S-057 | **AI Agent Impact Dashboard**       | P2     | 追蹤各 AI Agent（SBE Generator、Code Review、Sprint Planner）的使用率、產出被採納率與對交付效率的影響                         |
 
 ### 4.3 非功能需求
 
@@ -641,7 +628,7 @@ Trigger: Wiki Page Updated (Workspace = "Product Requirements", Status = Publish
 
 ---
 
-## 7. Module 6 — Service Catalog（服務目錄 — IDP 中心樞紐）
+## 7. Module 5 — Service Catalog（服務目錄 — IDP 中心樞紐）
 
 ### 7.1 概述
 
@@ -734,7 +721,7 @@ spec:
   provides:
     - api: "grpc-payment-v2"
 
-  # 5. 外掛擴充面板設定 (對應 Module 6 - Plugin Panels)
+  # 5. 外掛擴充面板設定 (對應 Module 5 - Plugin Panels)
   plugins:
     # (a) 觀測面板：關聯 Grafana / Datadog
     observability:
@@ -770,7 +757,7 @@ spec:
 
 ---
 
-## 8. Module 7 — Team Management（RBAC 與 Policy 管理系統）
+## 8. Module 6 — Team Management（RBAC 與 Policy 管理系統）
 
 ### 8.1 概述
 
@@ -869,6 +856,21 @@ spec:
 | CC-032 | **Webhook Outgoing**          | P0     | 平台事件推送至外部系統                                                                                  |
 | CC-033 | **API Rate Limiting & Quota** | P0     | API 存取受 Rate Limit 限制                                                                              |
 | CC-034 | **MCP Server Endpoint**       | P1     | 平台自身作為 MCP Server，允許外部 AI 工具（如 Cursor、Claude Code）直接存取平台的 Wiki、Ticket、PR 資料 |
+
+### 9.5 Metrics & Analytics（現代化指標體系）
+
+跨模組收集平台活動數據，摒棄速率幻覺，提供基於價值與效能的決策指標，作為全平台橫切關注點。
+
+| ID    | 功能                                | 優先級 | 說明                                                                                                                          |
+| ----- | ----------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| S-050 | **DORA Metrics Dashboard**          | P1     | 追蹤 Deployment Frequency、Lead Time for Changes（細分至 Task/PR/Deploy Cycle）、Change Failure Rate、Time to Restore Service |
+| S-051 | **DORA 5th Metric: Rework Rate**    | P1     | 追蹤為修復 User-facing Bug 而進行的非計畫性部署比例，及早捕捉 AI 引入的技術債                                                 |
+| S-052 | **SPACE Framework Indicators**      | P2     | Satisfaction & Well-being、Performance、Activity、Communication、Efficiency 五維度                                            |
+| S-053 | **EBM (Evidence-Based Management)** | P2     | Current Value、Unrealized Value、Time-to-Market、Ability to Innovate 四大 KVA                                                 |
+| S-054 | **Team Health Radar**               | P1     | 定期匿名問卷收集，AI 分析趨勢並預警認知過載或職業倦怠風險                                                                     |
+| S-055 | **Anti-Vanity Metrics Guard**       | P2     | 過度依賴 Story Points / Velocity / LoC 時主動提示搭配價值有效性指標                                                           |
+| S-056 | **Review Cycle Time Analytics**     | P1     | 追蹤 PR 從 Open 到 Merged 的時間分布，識別 Code Review 瓶頸（AI 產出速度 vs. 人類審查瓶頸）                                   |
+| S-057 | **AI Agent Impact Dashboard**       | P2     | 追蹤各 AI Agent（SBE Generator、Code Review、Sprint Planner）的使用率、產出被採納率與對交付效率的影響                         |
 
 ---
 
@@ -1334,7 +1336,7 @@ graph TD
     classDef external fill:#f3f4f6,stroke:#4b5563,stroke-width:2px,color:#1f2937,stroke-dasharray: 5 5
 
     %% 核心實體層
-    ServiceCatalog["★ Module 6: Service Catalog<br/>(萬物錨點 / Central Hub)"]:::central
+    ServiceCatalog["★ Module 5: Service Catalog<br/>(萬物錨點 / Central Hub)"]:::central
     Wiki["Module 1: Wiki System<br/>(知識庫、SBE、PRD)"]:::knowledge
     Scrum["Module 2: Scrum + DevOps<br/>(Ticket, PR, QA, Incident)"]:::process
 
@@ -1344,7 +1346,7 @@ graph TD
     Plugin["Module 4: Plugin System<br/>(Grafana, Github, Terraform)"]:::external
 
     %% 治理與底層架構
-    RBAC["Module 7: Team Mgmt & Policy<br/>(權限、Agent Cost Quota)"]:::platform
+    RBAC["Module 6: Team Mgmt & Policy<br/>(權限、Agent Cost Quota)"]:::platform
     AIInfra["Cross-Cutting: AI Infra<br/>(Context Engine, RAG, MCP)"]:::platform
 
     %% ================= 功能性依賴關係 =================
