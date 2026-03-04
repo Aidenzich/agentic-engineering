@@ -1379,3 +1379,128 @@ graph TD
     RBAC -. 角色管控與工作區隔離 .-> Wiki
     RBAC -. 政策管控 (如阻擋高風險 PR) .-> Scrum
 ```
+
+---
+
+## Appendix G: 系統工作流與票務生命週期可視化 (Mermaid 圖表)
+
+### 1. 票務生命週期狀態機 (Ticket Lifecycle State Machine)
+
+展示一個典型的 Story/Bug Ticket 從建立到完成的狀態流轉，以及沿途觸發的自動化 Agent 與 Plugin：
+
+```mermaid
+stateDiagram-v2
+    [*] --> Open: PM/RD 建立 Ticket
+
+    state "Open (Backlog)" as Open
+    state "In Progress (Development)" as InProgress
+    state "In Review (PR Opened)" as InReview
+    state "QA (Testing)" as QA
+    state "Done (Deployed)" as Done
+
+    Open --> Open: 自動生成 SBE (AI Agent)
+    Open --> Open: 自動生成 Test Cases (AI Agent)
+    Open --> InProgress: 放入 Sprint & Assign RD
+
+    InProgress --> InReview: RD 建立 PR
+    note right of InReview
+      自動觸發:
+      1. PR ↔ Ticket 雙向關聯
+      2. 併發 AI Agent Review (安全/架構/覆蓋率)
+      3. Risk-based 人工審批閘門
+    end note
+
+    InReview --> InProgress: Review Reject / 測試 Fail
+    InReview --> QA: PR Merged (自動化移轉)
+
+    note right of QA
+      自動觸發:
+      1. CI Build & Deploy to Staging
+      2. 自動執行 Test Cases (Test Runner)
+    end note
+
+    QA --> InProgress: 自動測試失敗 (自動退回並 Comment)
+    QA --> Done: Quality Gate 通過 & 部署至 Production
+
+    Done --> [*]
+```
+
+### 2. 端到端價值交付時序圖 (End-to-End Delivery Sequence Diagram)
+
+以 `payment-service` 多幣別結帳需求為例，展示各角色、系統模組與 AI Agent 之間的互動：
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    %% 定義參與者與角色
+    actor PM as PM / PO
+    actor RD as RD / Tech Lead
+    actor QA as QA
+    actor SRE as SRE / On-call
+    participant Wiki as Wiki System
+    participant Scrum as Scrum Board (Ticket)
+    participant Agent as AI Agent Runtime
+    participant Git as Git / CI Plugin
+    participant Alert as Observability Plugin
+    participant Catalog as Service Catalog
+
+    %% Phase A: 需求與規劃 (藍色區塊 - 產品/開發規劃)
+    rect rgba(59, 130, 246, 0.1)
+        Note over PM, RD: Phase A: 需求與規劃
+        PM->>Wiki: 撰寫「多幣別結帳」PRD
+        PM->>Scrum: 建立 Epic，關聯 payment-service 與 PRD
+        Scrum-->>Agent: Webhook 觸發
+        Agent->>Wiki: 讀取架構與 PRD (RAG)
+        Agent-->>Wiki: 輸出風險標註 (留言於 PRD)
+        RD->>Scrum: 拆解 Story (關聯 Wiki + Service)
+    end
+
+    %% Phase B: SBE 生成與 QA 規劃 (紫色區塊 - QA/分析)
+    rect rgba(168, 85, 247, 0.1)
+        Note over Scrum, QA: Phase B: SBE 生成與 QA 規劃
+        Scrum-->>Agent: Story 建立觸發
+        Agent->>Wiki: 讀取 PRD
+        Agent-->>PM: 生成 SBE Draft (等待審核)
+        PM->>Agent: Approve SBE
+        Agent->>Wiki: 建立並發布 SBE 頁面
+        Agent->>Scrum: 基於 SBE 自動生成 Test Cases
+        QA->>Scrum: 審閱並調整 Test Cases
+    end
+
+    %% Phase C: 開發與 Code Review (綠色區塊 - 核心開發)
+    rect rgba(34, 197, 94, 0.1)
+        Note over RD, Scrum: Phase C: 開發與 Code Review
+        RD->>Git: 提交分支並發起 PR
+        Git-->>Agent: PR Opened 觸發
+        Agent->>Scrum: AI Review 報告匯總 (留言至 PR)
+        RD->>Git: 人類 Review & Merge PR
+        Git-->>Scrum: PR Merged 狀態同步
+        Scrum->>Scrum: Ticket 自動更新並移至 QA 欄位
+    end
+
+    %% Phase D: 測試與部署 (橘色區塊 - 部署交付)
+    rect rgba(249, 115, 22, 0.1)
+        Note over Git, Catalog: Phase D: 測試與部署
+        Git->>Catalog: Deploy to Staging 記錄
+        Git-->>QA: 自動觸發 Test Runner
+        QA-->>Scrum: 回報自動測試結果 (Pass)
+        Git->>Catalog: Deploy to Prod 記錄 (Quality Gate Pass)
+    end
+
+    %% Phase E: 異常與修復 (紅色區塊 - 事故處理)
+    rect rgba(239, 68, 68, 0.1)
+        Note over Alert, SRE: Phase E: 異常與修復 (Incident)
+        Alert-->>Scrum: 偵測錯誤，觸發 Workflow 自動建立 Incident Ticket
+        Scrum-->>Agent: Incident Created 觸發
+        Agent-->>Scrum: 分析 PR/Deploy，輸出 Root Cause 推測至 Ticket
+        SRE->>Scrum: 檢視 Incident 及 AI 報告
+        SRE->>Git: 確認根因，觸發 Rollback 回滾
+        Git->>Catalog: 更新 Prod 部署記錄 (Rollback)
+        SRE->>Scrum: 將 Incident 標記為 Resolved
+        Scrum-->>Agent: Resolved 狀態變更觸發
+        Agent->>Wiki: 自動建立 Postmortem 頁面及預填模板
+        SRE->>Wiki: Review 並補充 Action Items
+        SRE->>Scrum: 從 Postmortem 建立後續 Follow-up Ticket
+    end
+```
