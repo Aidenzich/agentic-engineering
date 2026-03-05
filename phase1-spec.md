@@ -3,7 +3,7 @@
 
 | 欄位 | 內容 |
 |---|---|
-| **版本** | v1.0 |
+| **版本** | v1.1 |
 | **狀態** | Draft |
 | **目標讀者** | 工程師（實作）、架構師（技術決策） |
 | **前置文件** | ai-native-platform.md (PRD v0.3) |
@@ -39,12 +39,12 @@
 |---|---|---|---|
 | **Language** | Python | 3.12+ | 團隊主力語言 |
 | **Framework** | FastAPI | 0.115+ | async-first；Pydantic v2 native；OpenAPI 自動生成 |
-| **ORM** | SQLAlchemy | 2.x (async) | async engine + asyncpg driver；Mapped 型別安全 |
+| **ORM** | SQLAlchemy | 2.x (async) | async engine + asyncpg driver；Mapped 型別安全；DATABASE_URL 使用 `postgresql+asyncpg://` scheme |
 | **Migration** | Alembic | 1.x | SQLAlchemy 官方 migration 工具 |
 | **Validation** | Pydantic | v2 | FastAPI 原生；request/response schema |
 | **Primary DB** | PostgreSQL | 16 | JSONB 彈性欄位；內建 FTS + `pg_trgm`；ACID |
-| **Cache / PubSub** | Redis | 7.x | Session、WebSocket Pub/Sub、Celery broker |
-| **Job Queue** | Celery | 5.x | Workflow 執行引擎排程層；Redis 作為 broker + result backend |
+| **Cache / PubSub** | Redis | 7.x | Session、WebSocket Pub/Sub、arq broker + result backend |
+| **Job Queue** | arq | 0.26+ | Async-native 任務佇列；Redis 作為 broker；輕量替代 Celery，與 FastAPI async 生態一致 |
 | **WebSocket** | python-socketio | 5.x | ASGI 整合 FastAPI；前端使用 socket.io-client |
 | **File Storage** | MinIO | RELEASE.2024 | S3 相容；Self-hosted；Page 附件存放 |
 | **Auth** | python-jose + passlib | — | JWT（access 15min / refresh 7d）；bcrypt 密碼 hash |
@@ -91,88 +91,93 @@
 
 ```
 /
-├── backend/                     # Python FastAPI (Modular Monolith)
-│   ├── app/
-│   │   ├── main.py              # FastAPI app 入口、路由掛載
-│   │   ├── core/
-│   │   │   ├── config.py        # pydantic-settings 設定
-│   │   │   ├── database.py      # SQLAlchemy async engine + session
-│   │   │   ├── redis.py         # Redis 連線
-│   │   │   └── security.py      # JWT encode/decode、password hash
-│   │   ├── deps/                # FastAPI Dependencies（Guards 等價物）
-│   │   │   ├── auth.py          # get_current_user
-│   │   │   └── rbac.py          # require_org_member、require_org_role
-│   │   ├── models/              # SQLAlchemy ORM models
-│   │   │   ├── org.py           # Organization, User, OrgMember, Team, AuditLog
-│   │   │   ├── wiki.py          # Workspace, Page, PageVersion
-│   │   │   ├── scrum.py         # WorkItem, Sprint, PullRequest
-│   │   │   ├── service.py       # Service, EntityLink
-│   │   │   ├── workflow.py      # Workflow, WorkflowExecution
-│   │   │   └── notification.py  # Notification
-│   │   ├── schemas/             # Pydantic v2 schemas（request / response）
-│   │   │   └── ...              # 對應每個 domain
-│   │   ├── routers/             # FastAPI APIRouter（按 domain 分層）
-│   │   │   ├── auth.py
-│   │   │   ├── orgs/
-│   │   │   │   ├── teams.py
-│   │   │   │   ├── workspaces.py
-│   │   │   │   ├── projects.py
-│   │   │   │   ├── services.py
-│   │   │   │   ├── workflows.py
-│   │   │   │   └── ...
-│   │   │   └── plugins/
-│   │   │       ├── github.py    # GitHub Webhook endpoint
-│   │   │       ├── slack.py
-│   │   │       └── cicd.py
-│   │   ├── services/            # Business logic layer
-│   │   │   └── ...              # wiki_service.py, scrum_service.py, ...
-│   │   ├── events/
-│   │   │   └── bus.py           # 內部事件匯流排（asyncio Event / blinker）
-│   │   ├── workers/             # Celery tasks
-│   │   │   └── workflow.py      # Workflow 執行 worker
-│   │   └── realtime/
-│   │       └── socket.py        # python-socketio ASGI app
-│   ├── alembic/
-│   │   ├── env.py
-│   │   └── versions/            # migration 檔案
-│   ├── tests/
-│   │   ├── unit/
-│   │   └── integration/
-│   ├── pyproject.toml
-│   └── Dockerfile
+├── apps/
+│   ├── backend/                     # Python FastAPI (Modular Monolith)
+│   │   ├── app/
+│   │   │   ├── main.py              # FastAPI app 入口、路由掛載
+│   │   │   ├── core/
+│   │   │   │   ├── config.py        # pydantic-settings 設定
+│   │   │   │   ├── database.py      # SQLAlchemy async engine + session
+│   │   │   │   ├── redis.py         # Redis 連線（aioredis / redis.asyncio）
+│   │   │   │   └── security.py      # JWT encode/decode、password hash
+│   │   │   ├── deps/                # FastAPI Dependencies（Guards 等價物）
+│   │   │   │   ├── auth.py          # get_current_user
+│   │   │   │   └── rbac.py          # require_org_member、require_org_role
+│   │   │   ├── models/              # SQLAlchemy ORM models
+│   │   │   │   ├── org.py           # Organization, User, OrgMember, Team, AuditLog
+│   │   │   │   ├── wiki.py          # Workspace, Page, PageVersion
+│   │   │   │   ├── scrum.py         # WorkItem, Sprint, PullRequest
+│   │   │   │   ├── service.py       # Service, EntityLink
+│   │   │   │   ├── workflow.py      # Workflow, WorkflowExecution
+│   │   │   │   └── notification.py  # Notification
+│   │   │   ├── schemas/             # Pydantic v2 schemas（request / response）
+│   │   │   │   └── ...              # 對應每個 domain
+│   │   │   ├── routers/             # FastAPI APIRouter（按 domain 分層）
+│   │   │   │   ├── auth.py
+│   │   │   │   ├── orgs/
+│   │   │   │   │   ├── teams.py
+│   │   │   │   │   ├── workspaces.py
+│   │   │   │   │   ├── projects.py
+│   │   │   │   │   ├── services.py
+│   │   │   │   │   ├── workflows.py
+│   │   │   │   │   └── ...
+│   │   │   │   └── plugins/
+│   │   │   │       ├── github.py    # GitHub Webhook endpoint
+│   │   │   │       ├── slack.py
+│   │   │   │       └── cicd.py
+│   │   │   ├── services/            # Business logic layer
+│   │   │   │   └── ...              # wiki_service.py, scrum_service.py, ...
+│   │   │   ├── events/
+│   │   │   │   └── bus.py           # 內部 async 事件匯流排（見 Section 2.4）
+│   │   │   ├── workers/
+│   │   │   │   ├── settings.py      # arq WorkerSettings 定義
+│   │   │   │   └── workflow.py      # Workflow 執行 worker（arq task）
+│   │   │   └── realtime/
+│   │   │       └── socket.py        # python-socketio ASGI app
+│   │   ├── alembic/
+│   │   │   ├── env.py
+│   │   │   └── versions/            # migration 檔案
+│   │   ├── tests/
+│   │   │   ├── unit/
+│   │   │   └── integration/
+│   │   ├── pyproject.toml
+│   │   └── Dockerfile
 │   │
-│   └── frontend/                # Vite + React 19 SPA
+│   └── frontend/                    # Vite + React 19 SPA
 │       ├── index.html
 │       ├── vite.config.ts
 │       ├── src/
 │       │   ├── main.tsx
-│       │   ├── routes/          # React Router v7 file-based routes
-│       │   │   ├── _auth/       # login, register（layout: 無 sidebar）
+│       │   ├── routes/              # React Router v7 file-based routes
+│       │   │   ├── _auth/           # login, register（layout: 無 sidebar）
 │       │   │   │   ├── login.tsx
 │       │   │   │   └── register.tsx
-│       │   │   └── $orgSlug/    # 主應用（layout: sidebar + header）
+│       │   │   └── $orgSlug/        # 主應用（layout: sidebar + header）
 │       │   │       ├── wiki/
 │       │   │       ├── projects/
 │       │   │       ├── services/
 │       │   │       ├── workflows/
 │       │   │       └── settings/
 │       │   ├── components/
-│       │   │   ├── editor/      # TipTap 相關元件
-│       │   │   ├── board/       # Kanban Board
-│       │   │   ├── charts/      # Burndown, etc.
-│       │   │   └── ui/          # shadcn/ui 元件
+│       │   │   ├── editor/          # TipTap 相關元件
+│       │   │   ├── board/           # Kanban Board
+│       │   │   ├── charts/          # Burndown, etc.
+│       │   │   └── ui/              # shadcn/ui 元件
 │       │   ├── lib/
-│       │   │   ├── api/         # TanStack Query hooks + axios client
-│       │   │   ├── socket.ts    # socket.io-client 初始化
-│       │   │   └── store/       # Zustand stores
-│       │   └── types/           # 前端私有型別（從 shared-types 引用）
+│       │   │   ├── api/             # TanStack Query hooks + axios client
+│       │   │   ├── socket.ts        # socket.io-client 初始化
+│       │   │   └── store/           # Zustand stores
+│       │   └── types/               # API 型別定義（從 OpenAPI spec 生成或手動維護）
+│       ├── package.json
+│       └── Dockerfile
 │
-└── packages/
-    └── shared-types/            # 前後端共用 TypeScript types
-        ├── api.ts               # API request/response types
-        ├── entities.ts          # 核心實體類型
-        └── events.ts            # WebSocket event types
+├── docker-compose.yml
+├── nginx.conf
+├── .env.example
+└── README.md
 ```
+
+> **型別同步策略：** 後端以 Pydantic v2 schemas 為 Single Source of Truth，透過 FastAPI 自動生成 OpenAPI spec（`/docs`）。前端型別可從 OpenAPI spec 手動維護或使用 `openapi-typescript` 等工具自動生成，無需獨立的 shared-types package。
 
 ### 2.2 全棧架構總覽
 
@@ -181,10 +186,10 @@ Browser (Vite + React SPA)
   │  REST API (axios + TanStack Query)
   │  WebSocket (socket.io-client)
   ▼
-nginx
-  ├── /api/*  → FastAPI :8000
-  ├── /ws/*   → python-socketio :8000
-  └── /*      → static dist/ (React SPA)
+nginx (:80)
+  ├── /api/*  → FastAPI backend:8000
+  ├── /ws/*   → python-socketio backend:8000
+  └── /*      → static dist/ (React SPA, served by nginx)
 
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        FastAPI Application                          │
@@ -195,24 +200,24 @@ nginx
 │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘  │
 │       │            │            │             │            │        │
 │  ─────┴────────────┴────────────┴─────────────┴────────────┴─────── │
-│                   Internal Event Bus (blinker / asyncio)             │
+│                   Internal Async Event Bus (見 Section 2.4)          │
 │  ─────┬────────────┬────────────┬─────────────┬────────────┬─────── │
 │       │            │            │             │            │        │
 │  ┌────▼─────┐ ┌────▼─────┐ ┌───▼──────┐ ┌────▼─────┐ ┌────▼─────┐  │
 │  │ Workflow │ │Notifica- │ │  Search  │ │ Realtime │ │ Plugins  │  │
 │  │  Worker  │ │  tion    │ │  Router  │ │(socketio)│ │  Router  │  │
-│  │ (Celery) │ │  Router  │ │          │ │          │ │          │  │
+│  │  (arq)   │ │  Router  │ │          │ │          │ │          │  │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘  │
 │                                                                     │
 │  ─────────────────────────────────────────────────────────────────  │
-│          Infrastructure Layer (SQLAlchemy · Redis · Celery)         │
+│          Infrastructure Layer (SQLAlchemy · Redis · arq)            │
 └─────────────────────────────────────────────────────────────────────┘
          │                    │                    │
     PostgreSQL              Redis               MinIO
 ```
 
 **模組邊界規則：**
-- Router 間不直接呼叫彼此的 Service，一律透過內部 event bus（blinker）發布事件
+- Router 間不直接呼叫彼此的 Service，一律透過內部 async event bus 發布事件（見 Section 2.4）
 - Auth Dependencies（`get_current_user`、`require_org_member`）透過 FastAPI `Depends()` 注入所有需要認證的路由
 - `AsyncSession` 透過 `get_db` dependency 注入，每個 request 使用獨立 session
 
@@ -248,6 +253,56 @@ HTTP Request
     → AsyncSession（SQLAlchemy DB 操作）
     → 回傳 Pydantic response model（自動序列化）
   → Response
+```
+
+### 2.4 內部 Async Event Bus
+
+使用輕量的 in-process async event dispatcher，不依賴外部套件：
+
+```python
+# apps/backend/app/events/bus.py
+import asyncio
+from collections import defaultdict
+from typing import Any, Callable, Coroutine
+
+EventHandler = Callable[..., Coroutine[Any, Any, None]]
+
+class EventBus:
+    """輕量 in-process async event bus。Phase 1 足夠；Phase 2+ 可替換為 Redis Streams。"""
+
+    def __init__(self):
+        self._handlers: dict[str, list[EventHandler]] = defaultdict(list)
+
+    def on(self, event: str, handler: EventHandler) -> None:
+        """註冊事件處理器。"""
+        self._handlers[event].append(handler)
+
+    async def emit(self, event: str, **kwargs) -> None:
+        """發布事件，所有 handler 並行執行（fire-and-forget，不阻塞主流程）。"""
+        handlers = self._handlers.get(event, [])
+        if handlers:
+            await asyncio.gather(
+                *(h(**kwargs) for h in handlers),
+                return_exceptions=True,  # handler 失敗不影響其他 handler
+            )
+
+# Singleton instance，在 main.py 中初始化
+event_bus = EventBus()
+```
+
+**使用範例：**
+```python
+# 註冊（在 app startup 時）
+from app.events.bus import event_bus
+
+async def on_ticket_created(**kwargs):
+    # 發送通知、觸發 workflow 等
+    ...
+
+event_bus.on("scrum.ticket.created", on_ticket_created)
+
+# 發布（在 Service 層）
+await event_bus.emit("scrum.ticket.created", work_item=item, actor=current_user)
 ```
 
 ---
@@ -313,8 +368,8 @@ services:
     build:
       context: ./apps/backend
       dockerfile: Dockerfile
-    environment:
-      DATABASE_URL: postgresql://idp_user:${POSTGRES_PASSWORD}@postgres:5432/idp_db
+    environment: &backend-env
+      DATABASE_URL: postgresql+asyncpg://idp_user:${POSTGRES_PASSWORD}@postgres:5432/idp_db
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
@@ -327,94 +382,111 @@ services:
       GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY}
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
-      NODE_ENV: production
     ports:
-      - "3001:3001"
+      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
 
-  frontend:
-    # Vite build → 純靜態 dist/，由 nginx serve
-    # 無需 Node.js runtime，不需要獨立 container
-    # nginx 直接 serve static files（見 nginx.conf）
-    # 未來可替換為 S3 + CloudFront，zero code change
+  arq-worker:
     build:
-      context: ./apps/frontend
-      dockerfile: Dockerfile        # multi-stage: node build → nginx serve
-    ports:
-      - "3000:80"
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    command: arq app.workers.settings.WorkerSettings
+    environment:
+      <<: *backend-env
     depends_on:
-      - backend
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   nginx:
     image: nginx:alpine
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - frontend_dist:/usr/share/nginx/html   # 從 frontend build stage 複製
     ports:
       - "80:80"
     depends_on:
       - backend
-      - frontend
 
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  frontend_dist:    # 由 CI/CD build 階段填充，或本地 pnpm build 後掛載
 ```
 
-### 3.2 Frontend Dockerfile（Multi-stage）
+### 3.2 Frontend Build
 
-```dockerfile
-# apps/frontend/Dockerfile
+前端為純靜態 SPA，**不需要獨立的 runtime container**。build 後產出 `dist/` 目錄，由外層 nginx 統一 serve。
 
-# Stage 1: Build
-FROM node:22-alpine AS builder
-WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
-RUN corepack enable && pnpm install --frozen-lockfile
-COPY . .
-# 注入 API endpoint（build-time env）
-ARG VITE_API_BASE_URL=http://localhost/api
-ARG VITE_WS_URL=ws://localhost
-ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-ENV VITE_WS_URL=$VITE_WS_URL
-RUN pnpm build
-# 輸出：dist/ 純靜態檔案
+```bash
+# 本地開發
+cd apps/frontend
+pnpm install
+pnpm dev                # Vite dev server (HMR)
 
-# Stage 2: Serve（nginx，無 Node.js）
-FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
-# SPA fallback：所有路由導向 index.html（React Router 客戶端路由）
-COPY nginx-spa.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+# 生產 build
+VITE_API_BASE_URL=http://localhost/api \
+VITE_WS_URL=ws://localhost \
+pnpm build              # 輸出 dist/
 ```
+
+**CI/CD 流程**：GitHub Actions 中 `pnpm build` 後，將 `dist/` 複製至 nginx container 的 `/usr/share/nginx/html`。
+
+### 3.3 nginx.conf
 
 ```nginx
-# apps/frontend/nginx-spa.conf
-server {
-  listen 80;
-  root /usr/share/nginx/html;
-  index index.html;
+# nginx.conf（根目錄）
+events { worker_connections 1024; }
 
-  # SPA fallback — 必須，否則直接訪問深層路由會 404
-  location / {
-    try_files $uri $uri/ /index.html;
-  }
+http {
+  include mime.types;
 
-  # 靜態資源快取
-  location ~* \.(js|css|png|jpg|gif|svg|ico|woff2)$ {
-    expires 1y;
-    add_header Cache-Control "public, immutable";
+  server {
+    listen 80;
+
+    # SPA 靜態檔案
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # API 反向代理
+    location /api/ {
+      proxy_pass http://backend:8000;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # WebSocket 反向代理
+    location /ws/ {
+      proxy_pass http://backend:8000;
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+    }
+
+    # SPA fallback — 必須，否則直接訪問深層路由會 404
+    location / {
+      try_files $uri $uri/ /index.html;
+    }
+
+    # 靜態資源快取（Vite 產出的 hashed 檔案）
+    location ~* \.(js|css|png|jpg|gif|svg|ico|woff2)$ {
+      expires 1y;
+      add_header Cache-Control "public, immutable";
+    }
   }
 }
 ```
 
 > **S3 部署時**：將 `dist/` 上傳至 S3，在 CloudFront 設定 Error Page 404 → 200 `/index.html`，實現相同的 SPA fallback 效果。
 
-### 3.3 環境變數 (.env.example)
+### 3.4 環境變數 (.env.example)
 
 ```bash
 # Database
@@ -611,6 +683,7 @@ class Workspace(Base):
     slug:        Mapped[str]      = mapped_column(String, nullable=False)
     description: Mapped[str|None] = mapped_column(String)
     is_public:   Mapped[bool]     = mapped_column(Boolean, default=False)
+    deleted_at:  Mapped[datetime|None] = mapped_column(DateTime(timezone=True))  # 軟刪除
     created_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -693,6 +766,8 @@ class Project(Base):
     org_id:      Mapped[str]      = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     name:        Mapped[str]      = mapped_column(String, nullable=False)
     slug:        Mapped[str]      = mapped_column(String, nullable=False)
+    prefix:      Mapped[str]      = mapped_column(String(10), nullable=False)  # e.g. "PROJ", "BE"，用於 Ticket ID（PROJ-1, BE-42）
+    next_number: Mapped[int]      = mapped_column(Integer, default=1)          # 自動遞增計數器，建立 WorkItem 時 +1
     description: Mapped[str|None] = mapped_column(String)
     created_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -700,7 +775,10 @@ class Project(Base):
     organization: Mapped["Organization"]   = relationship(back_populates="projects")
     work_items:   Mapped[list["WorkItem"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     sprints:      Mapped[list["Sprint"]]   = relationship(back_populates="project", cascade="all, delete-orphan")
-    __table_args__ = (UniqueConstraint("org_id", "slug"),)
+    __table_args__ = (
+        UniqueConstraint("org_id", "slug"),
+        UniqueConstraint("org_id", "prefix"),  # 同一 Org 內 prefix 唯一
+    )
 
 class TeamProject(Base):
     __tablename__ = "team_projects"
@@ -711,6 +789,7 @@ class WorkItem(Base):
     __tablename__ = "work_items"
     id:           Mapped[str]            = mapped_column(String, primary_key=True, default=new_id)
     project_id:   Mapped[str]            = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    number:       Mapped[int]            = mapped_column(Integer, nullable=False)  # 自動分配，顯示為 "{project.prefix}-{number}"（e.g. PROJ-42）
     parent_id:    Mapped[str|None]       = mapped_column(ForeignKey("work_items.id"))
     type:         Mapped[WorkItemType]   = mapped_column(SAEnum(WorkItemType), default=WorkItemType.STORY)
     title:        Mapped[str]            = mapped_column(String, nullable=False)
@@ -723,6 +802,7 @@ class WorkItem(Base):
     labels:       Mapped[list[str]]      = mapped_column(ARRAY(String), default=list)
     custom_fields:Mapped[dict|None]      = mapped_column(JSONB)
     created_by_id:Mapped[str]            = mapped_column(ForeignKey("users.id"), nullable=False)
+    deleted_at:   Mapped[datetime|None]  = mapped_column(DateTime(timezone=True))  # 軟刪除；非 null 表示已刪除
     created_at:   Mapped[datetime]       = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at:   Mapped[datetime]       = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -733,6 +813,7 @@ class WorkItem(Base):
     sprint_links: Mapped[list["SprintWorkItem"]] = relationship(back_populates="work_item", cascade="all, delete-orphan")
 
     __table_args__ = (
+        UniqueConstraint("project_id", "number"),  # 同一 Project 內 number 唯一
         Index("ix_work_items_project_status", "project_id", "status"),
         Index("ix_work_items_project_type",   "project_id", "type"),
         Index("ix_work_items_project_parent", "project_id", "parent_id"),
@@ -983,6 +1064,8 @@ class Notification(Base):
 
 ### 5.2 統一回應格式
 
+> **注意：** 以下 API 回應格式使用 TypeScript interface 描述，作為前後端共同的 API 契約文件。後端以 Pydantic v2 schemas 實作相同結構。
+
 ```typescript
 // 成功 — 單筆
 { data: T }
@@ -1137,6 +1220,7 @@ async def create_workspace(
 
 | Method | Path | 描述 | Auth |
 |---|---|---|---|
+| POST | `/auth/register` | 註冊（Phase 1：開放註冊；建立帳號後自動登入） | ❌ |
 | POST | `/auth/login` | 登入 | ❌ |
 | POST | `/auth/logout` | 登出（revoke refresh token） | ✅ |
 | POST | `/auth/refresh` | 刷新 access token | Cookie |
@@ -1171,7 +1255,8 @@ async def create_workspace(
 ### 7.2 關鍵業務規則
 
 - Org 建立者自動成為 OWNER，且 Org 必須至少有一個 OWNER
-- 邀請成員：若 email 已是系統使用者 → 直接加入；若不是 → 發送邀請信（Phase 1 簡化：寄出後直接建立帳號並回傳臨時密碼）
+- 註冊：Phase 1 為開放註冊（email + password + name），建立帳號後回傳 access_token + refresh_token（等同自動登入）
+- 邀請成員：若 email 已是系統使用者 → 直接加入；若不是 → Phase 1 簡化為回傳錯誤提示「使用者尚未註冊」，需先自行註冊
 - 刪除成員前須確認：不能刪除 OWNER；刪除後其 assign 的 WorkItem 設為 unassigned
 - 角色降級限制：不能將唯一的 OWNER 降為 ADMIN
 
@@ -1374,17 +1459,37 @@ interface BurndownData {
 
 當 GitHub Webhook 觸發 `pull_request` 事件時，後端執行：
 
-```typescript
-// 1. Branch name 解析
-// Pattern: feat/PROJ-123-description → ticketId = "PROJ-123"
-const BRANCH_PATTERN = /(?:feat|fix|chore|hotfix)\/([A-Z]+-\d+)/i;
+```python
+import re
 
-// 2. Commit message 解析
-// Pattern: "fixes PROJ-123" or "refs PROJ-123" or "closes PROJ-123"
-const COMMIT_PATTERN = /(?:fixes?|refs?|closes?)\s+([A-Z]+-\d+)/gi;
+# 1. Branch name 解析
+# Pattern: feat/PROJ-123-description → ticket_key = "PROJ-123"
+BRANCH_PATTERN = re.compile(r"(?:feat|fix|chore|hotfix)/([A-Z]+-\d+)", re.IGNORECASE)
 
-// 3. 解析到 Ticket ID 後，查詢 WorkItem 並建立 EntityLink
-// 4. 發布 scrum.pr.linked 事件 → Notification + Workflow Trigger
+# 2. Commit message / PR body 解析
+# Pattern: "fixes PROJ-123" or "refs PROJ-123" or "closes PROJ-123"
+COMMIT_PATTERN = re.compile(r"(?:fixes?|refs?|closes?)\s+([A-Z]+-\d+)", re.IGNORECASE)
+
+async def auto_link_pr(pr_data: dict, db: AsyncSession) -> list[str]:
+    """從 branch name 和 PR body 中解析 ticket key，建立 EntityLink。"""
+    ticket_keys: set[str] = set()
+
+    # 從 branch name 解析
+    branch_match = BRANCH_PATTERN.search(pr_data["head_branch"])
+    if branch_match:
+        ticket_keys.add(branch_match.group(1).upper())
+
+    # 從 PR body 解析
+    if pr_data.get("body"):
+        ticket_keys.update(
+            m.group(1).upper() for m in COMMIT_PATTERN.finditer(pr_data["body"])
+        )
+
+    # 3. 查詢 WorkItem（ticket_key = "{project.prefix}-{work_item.number}"）
+    #    拆分 prefix 和 number → 查詢 Project(prefix) → WorkItem(project_id, number)
+    # 4. 建立 EntityLink
+    # 5. 發布 scrum.pr.linked 事件 → Notification + Workflow Trigger
+    ...
 ```
 
 ### 9.5 Sprint Board API 回應
@@ -1582,16 +1687,28 @@ interface WorkflowAction {
 
 ### 11.5 執行引擎架構
 
+**arq Worker 定義：**
+
 ```python
-# Celery Worker 架構
-# backend/app/workers/workflow_worker.py
+# apps/backend/app/workers/settings.py
+from arq.connections import RedisSettings
+from app.core.config import settings
 
-from celery import shared_task
-from app.core.database import get_sync_session
+class WorkerSettings:
+    functions = [execute_workflow]
+    redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+    max_jobs = 10
+    job_timeout = 300  # 5 分鐘超時
+```
 
-@shared_task(bind=True, max_retries=3, acks_late=True)
-def execute_workflow(self, workflow_id: str, trigger_data: dict):
-    with get_sync_session() as db:
+```python
+# apps/backend/app/workers/workflow.py
+from arq import Retry
+from app.core.database import get_async_session
+
+async def execute_workflow(ctx: dict, workflow_id: str, trigger_data: dict):
+    """arq worker function — async-native，直接使用 async session。"""
+    async with get_async_session() as db:
         # 1. 建立 WorkflowExecution 紀錄（status: RUNNING）
         # 2. 評估 Trigger filters（是否符合此次事件）
         # 3. 評估 Condition（若有）→ 不符合則 skip，execution status: COMPLETED
@@ -1603,13 +1720,29 @@ def execute_workflow(self, workflow_id: str, trigger_data: dict):
         # 5. 更新 WorkflowExecution（status: COMPLETED/FAILED, duration_ms）
 ```
 
-**事件到 Queue 的橋接（blinker）：**
+**事件到 Queue 的橋接（Event Bus）：**
 ```python
-# backend/app/events/workflow_bridge.py
-# 訂閱 blinker 上的所有領域事件（domain_event signal）
-# 找到所有 ACTIVE 且 trigger.type 匹配的 Workflow
-# 對每個匹配的 Workflow 呼叫 execute_workflow.delay(workflow_id, trigger_data)
-# task_id = f"pr-{pr_id}-event-{event_type}"，確保冪等（Celery task_id 唯一）
+# apps/backend/app/events/workflow_bridge.py
+from arq import create_pool
+from arq.connections import RedisSettings
+from app.events.bus import event_bus
+
+async def on_domain_event(event_type: str, **kwargs):
+    """訂閱 event bus 上的所有領域事件，找到匹配的 ACTIVE Workflow 並 enqueue。"""
+    # 1. 查詢所有 ACTIVE 且 trigger.type 匹配 event_type 的 Workflow
+    # 2. 對每個匹配的 Workflow：
+    pool = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
+    await pool.enqueue_job(
+        "execute_workflow",
+        workflow_id,
+        trigger_data,
+        _job_id=f"{event_type}-{resource_id}",  # 確保冪等（相同 job_id 不重複）
+    )
+
+# 啟動時註冊（在 main.py lifespan 中）
+for trigger_type in SUPPORTED_TRIGGERS:
+    event_name = TRIGGER_TO_EVENT[trigger_type]
+    event_bus.on(event_name, lambda **kw: on_domain_event(event_name, **kw))
 ```
 
 ---
@@ -1622,13 +1755,13 @@ def execute_workflow(self, workflow_id: str, trigger_data: dict):
 
 ```sql
 -- 建立 GIN 索引（在 Alembic migration 中手動加入）
-CREATE INDEX idx_pages_fts ON "Page"
-  USING gin(to_tsvector('english', title || ' ' || "plainText"));
+CREATE INDEX idx_pages_fts ON pages
+  USING gin(to_tsvector('english', title || ' ' || plain_text));
 
-CREATE INDEX idx_work_items_fts ON "WorkItem"
+CREATE INDEX idx_work_items_fts ON work_items
   USING gin(to_tsvector('english', title));
 
-CREATE INDEX idx_services_fts ON "Service"
+CREATE INDEX idx_services_fts ON services
   USING gin(to_tsvector('english', name || ' ' || COALESCE(description, '')));
 ```
 
@@ -1683,7 +1816,7 @@ POST  /orgs/:orgId/notifications/read-all
 **Server → Client 事件：**
 
 ```typescript
-// packages/shared-types/events.ts
+// WebSocket 事件型別定義（前端 apps/frontend/src/types/events.ts）
 
 type ServerToClientEvents = {
   // Wiki
@@ -1746,16 +1879,23 @@ Headers:
 | `check_run` | completed | 更新 PR ciStatus |
 
 **Webhook 安全驗證：**
-```typescript
-// 驗證 X-Hub-Signature-256
-const signature = req.headers['x-hub-signature-256'];
-const expected = `sha256=${crypto
-  .createHmac('sha256', GITHUB_WEBHOOK_SECRET)
-  .update(rawBody)
-  .digest('hex')}`;
-if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
-  throw new UnauthorizedException('Invalid webhook signature');
-}
+```python
+import hashlib
+import hmac
+from fastapi import Request, HTTPException
+
+async def verify_github_signature(request: Request) -> bytes:
+    """驗證 GitHub Webhook 的 X-Hub-Signature-256 header。"""
+    body = await request.body()
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    expected = "sha256=" + hmac.new(
+        settings.GITHUB_WEBHOOK_SECRET.encode(),
+        body,
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+    return body
 ```
 
 ### 13.2 Slack Plugin
@@ -1780,7 +1920,15 @@ if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
 }
 ```
 
-**後端實作：** 使用 `@slack/web-api`，呼叫 `chat.postMessage`
+**後端實作：** 使用 Python `slack_sdk`（`pip install slack_sdk`），呼叫 `AsyncWebClient.chat_postMessage`
+
+```python
+from slack_sdk.web.async_client import AsyncWebClient
+
+async def send_slack_message(channel: str, text: str, token: str):
+    client = AsyncWebClient(token=token)
+    await client.chat_postMessage(channel=channel, text=text)
+```
 
 ### 13.3 CI/CD Connector
 
@@ -1840,10 +1988,11 @@ Phase 1 採用「由下往上，由核心往邊緣」的建置策略：
 Month 1-2: Infrastructure & Foundation
 ─────────────────────────────────────
 Week 1-2:
-  - Monorepo 建置（pnpm workspace + Turborepo）
+  - Monorepo 建置（pnpm 管理前端、uv 管理後端）
   - Docker Compose 環境（Postgres / Redis / MinIO / HocusPocus）
   - FastAPI 骨架 + SQLAlchemy models + Alembic first migration
-  - GitHub Actions CI pipeline（lint, test, build）
+  - arq worker 設定
+  - GitHub Actions CI pipeline（Ruff lint, pytest, pnpm build）
 
 Week 3-4:
   - Auth Module（登入/登出/refresh/JWT）
@@ -1880,7 +2029,7 @@ Week 13-15:
   - CI/CD Connector（Webhook receiver）
 
 Week 16-17:
-  - Workflow Engine Module（Definition CRUD + Celery Worker）
+  - Workflow Engine Module（Definition CRUD + arq Worker）
   - 所有支援 Trigger 類型的事件橋接
   - Execution Log UI
 
@@ -1912,11 +2061,11 @@ Week 18-20:
 ### 15.1 測試層級
 
 ```
-E2E Tests (Playwright) ─── 10% ── 覆蓋主要 User Journey
+E2E Tests (Playwright) ──────────────────── 10% ── 覆蓋主要 User Journey
      ▲
-Integration Tests (Vitest + Supertest) ─ 30% ── API 層面，含 DB
+Integration Tests (pytest + httpx TestClient) ─ 30% ── API 層面，含 DB
      ▲
-Unit Tests (Vitest) ─────────────────── 60% ── Service / 純邏輯
+Unit Tests (pytest + pytest-asyncio) ──────── 60% ── Service / 純邏輯
 ```
 
 ### 15.2 強制測試涵蓋清單（每個 Module）
@@ -1927,7 +2076,7 @@ Unit Tests (Vitest) ─────────────────── 60
 - [ ] 邊界值：空列表、null 欄位、最大長度字串
 - [ ] 權限：無權限操作應拋出 ForbiddenException
 
-**Integration Tests（Controller 層，使用 Supertest）：**
+**Integration Tests（Router 層，使用 httpx AsyncClient + TestClient）：**
 - [ ] JWT 未提供 → 401
 - [ ] JWT 有效但非 Org 成員 → 403
 - [ ] DTO 驗證失敗 → 400（含 details）
@@ -1954,7 +2103,7 @@ Unit Tests (Vitest) ─────────────────── 60
 | GitHub Webhook signature 不符 | 401，不執行任何邏輯 |
 | Workflow Action 失敗（e.g. Slack API down） | 記錄 Step 失敗，整個 Execution 標為 FAILED，後續 Actions 不執行 |
 | Workflow 定義更新後自動 DRAFT 化 | 已有的 ACTIVE Execution 不受影響（執行完才 DRAFT） |
-| 並發多個 Webhook 事件（同一 PR） | Celery task_id = `pr-{pr_id}-event-{event_type}` 確保冪等（相同 task_id 不重複加入） |
+| 並發多個 Webhook 事件（同一 PR） | arq `_job_id = f"{event_type}-{pr_id}"` 確保冪等（相同 job_id 不重複加入） |
 | 使用者同時被多個分頁編輯同一 Page | HocusPocus CRDT 處理衝突；Page save 使用樂觀鎖（version field check） |
 
 ### 15.4 效能目標驗證（k6 腳本）
@@ -1972,4 +2121,4 @@ Target: API P95 < 500ms
 
 ---
 
-*此規格書版本 v1.0 — 基於 PRD v0.3 Phase 1 範圍。任何功能範圍變更須同步更新本文件並重新評估里程碑。*
+*此規格書版本 v1.1 — 基於 PRD v0.3 Phase 1 範圍。v1.1 修正：統一後端為 Python/FastAPI 生態、Celery 替換為 arq、修復目錄結構/port/event bus 不一致、補齊 register endpoint 及 ticket ID 機制。任何功能範圍變更須同步更新本文件並重新評估里程碑。*
